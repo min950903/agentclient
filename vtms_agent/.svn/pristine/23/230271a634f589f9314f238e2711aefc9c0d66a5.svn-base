@@ -1,0 +1,105 @@
+package com.transfer.video.vtms.agent;
+
+import java.io.FileOutputStream;
+import java.io.PrintWriter;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Random;
+
+import com.google.gson.Gson;
+
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
+
+public class AgentServiceImpl implements AgentService {
+	public static final MediaType MEDIA_TYPE_HTML = MediaType.get("application/json; charset=utf-8");
+
+	@Override
+	public Device transferDevice() {
+		AgentMapper agentMapper = new AgentMapperImpl();
+		Device device = agentMapper.selectDeviceInfo(); // 호스트 정보와 ip정보를 가지고 있음
+
+		if (!(null == device.getIp())) {
+			device.setAccessKey(agentMapper.selectAccessKey());
+
+			if (null == device.getAccessKey()) {
+				StringBuffer accessKey = new StringBuffer();
+				accessKey.append(device.getIp());
+
+				Random randomAlphabet = new Random();
+				for (int i = 0; i < 5; i++) {
+					accessKey.append(String.valueOf((char) ((int) (randomAlphabet.nextInt(26)) + 65)));
+				}
+				device.setAccessKey(accessKey.toString());
+
+				agentMapper.insertAccessKey(device.getAccessKey());
+			}
+
+			String serverIP = agentMapper.selectServerInfo();
+
+			// url 생성
+			StringBuffer url = new StringBuffer();
+			url.append("http://");
+			url.append(serverIP);
+			url.append("/device?");
+			url.append("ip=" + device.getIp());
+			url.append("&hostName=" + device.getHostName());
+			url.append("&accessKey=" + device.getAccessKey());
+
+			RequestBody requestBody = RequestBody.create("", MEDIA_TYPE_HTML);
+			Request request = new Request.Builder().url(url.toString()).post(requestBody).build();
+
+			Response response = null;
+
+			PrintWriter printWriter = null;
+			FileOutputStream fileOutputStream = null;
+
+			try {
+				// 해당 경로에 디바이스 전송 이력 로그 파일 저장
+				Path path = Paths.get("C:\\agent\\");
+				Files.createDirectories(path);
+
+				printWriter = new PrintWriter(new FileOutputStream(path.toString() + "\\transfer-log.txt", true));
+
+				// 전송 실패시 최대 3회 디바이스 전송
+				for (int i = 0; i <= 2; i++) {
+					// 디바이스 정보를 관리 시스템으로 전송한다.
+					response = new OkHttpClient().newCall(request).execute();
+					ResponseBody responseBody = response.body();
+					
+					Message message = new Gson().fromJson(response.body().string(), Message.class);
+					if ("200".equals(message.getCode())) {
+						printWriter.write(new SimpleDateFormat("yyyy-MM-dd hh:mm:ss")
+								.format(new Date()));
+						printWriter.write(" / status-code : " + message.getCode());
+						printWriter.write(" / message : " + message.getMessage() + "\r\n");
+
+						break;
+					} else {
+						printWriter.write(new SimpleDateFormat("yyyy-mm-dd hh:mm:ss")
+								.format(new Date(System.currentTimeMillis())));
+						printWriter.write("status-code : " + message.getCode());
+						printWriter.write("message : " + message.getMessage() + "\r\n");
+					}
+				}
+			} catch (Exception e) {
+				e.printStackTrace();
+			} finally {
+				try {
+					if (fileOutputStream != null) {fileOutputStream.close();}
+					if (printWriter != null) {printWriter.close();}
+					if (response != null) {response.close();}
+				} catch (Exception e) {}
+			}
+		}
+
+		return device;
+	}
+}

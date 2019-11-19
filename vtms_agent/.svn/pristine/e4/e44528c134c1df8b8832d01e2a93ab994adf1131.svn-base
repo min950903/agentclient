@@ -1,0 +1,9 @@
+#QPf2n07q9dIONRETwQ52NRe1R9Q9DEcSLUSSjuaiuJU=
+#Mon Nov 18 13:34:14 KST 2019
+cmd.taskkill=cmd.exe /c taskkill /im vlc.exe /f
+cmd.ipconfig=cmd.exe /c ipconfig -all
+cmd.playvideo=cmd /c cd C\:\\Program Files\\VideoLAN\\VLC&vlc --fullscreen --loop
+server.ip=JkycwF4t9aHFYP7+z2g1uA\=\=
+key=zjavbxjrhdgkrrhk
+path.video=C\:\\agent\\video\\
+charset=EUC-KR

@@ -1,0 +1,142 @@
+package com.transfer.video.vtms.agent;
+
+import java.io.FileOutputStream;
+import java.io.PrintWriter;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Random;
+
+import com.google.gson.JsonParser;
+
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
+
+public class AgentClient {
+	private static final MediaType MEDIA_TYPE_HTML = MediaType.get("application/json; charset=utf-8");
+	private static final String AGENT_LOG_PATH = "C:\\agent\\log\\";
+
+	public static void main(String[] args) {
+		AgentMapper agentMapper = new AgentMapperImpl();
+
+		Device device = agentMapper.selectDeviceInfo();
+		if (device.getIp() != null) {
+			device.setAccessKey(agentMapper.selectAccessKey());
+
+			if (device.getAccessKey() == null) {
+				String accessKey = getAccessKey();
+				device.setAccessKey(accessKey.toString());
+				agentMapper.insertAccessKey(device.getAccessKey());
+			}
+
+			String serverIp = agentMapper.selectServerInfo();
+			String targetUrl = getTargetUrl(serverIp, device);
+
+			RequestBody requestBody = RequestBody.create("", MEDIA_TYPE_HTML);
+			Request request = new Request.Builder().url(targetUrl).post(requestBody).build();
+			transferDeviceInfo(request);
+		} else {
+			writeLog(0, "네트워크 연결 실패");
+		}
+	}
+	
+	/**
+	 * 서버ip와 디바이스 ip, 호스트 명, 접근 키를 조합해서 TargetUrl을 생성한다.
+	 * 
+	 * @param serverIp 영상 파일 전송 관리 시스템 서버 ip
+	 * @param device 디바이스 정보(디바이스 ip, 호스트 명, 접근 키)를 가지고 있는 객체
+	 * @return String 타입의 TargetUrl을 반환한다.
+	 */
+	private static String getTargetUrl(String serverIp, Device device) {
+		return new StringBuffer().append("http://").append(serverIp).append("/device/agent?")
+				.append("ip=" + device.getIp()).append("&hostName=" + device.getHostName())
+				.append("&accessKey=" + device.getAccessKey()).toString();
+	}
+	
+	/**
+	 * 디바이스가 가지는 고유한 접근키를 생성한다.
+	 * 현재 날짜와 랜덤한 문자열5개를 결합해서 생성한다.
+	 * 
+	 * @return String 타입의 접근 키를 반환한다.
+	 */
+	private static String getAccessKey() {
+		StringBuffer accessKey = new StringBuffer();
+		accessKey.append(new SimpleDateFormat("yyyyMMddhhmmss").format(new Date()).trim());
+
+		Random randomAlphabet = new Random();
+		for (int i = 0; i < 5; i++) {
+			accessKey.append(String.valueOf((char) ((int) (randomAlphabet.nextInt(26)) + 65)));
+		}
+
+		return accessKey.toString();
+	}
+
+	/**
+	 * HTTP통신으로 디바이스 정보를 전송하고 응답으로 메시지를 받아 로그를 남긴다.
+	 * 
+	 * @param request 
+	 */
+	private static void transferDeviceInfo(Request request) {
+		Response response = null;
+
+		try {
+			for (int i = 0; i <= 2; i++) {
+				response = new OkHttpClient().newCall(request).execute();
+				
+				int statusCode = response.code();
+				String resultMessage = new JsonParser().parse(response.body().string()).getAsString();
+
+				if (statusCode == 200) {
+					writeLog(statusCode, resultMessage);
+					
+					break;
+				} else { writeLog(statusCode, resultMessage); }
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		} finally {
+			try {
+				if (response != null) { response.close(); }
+			} catch (Exception e) {
+				e.printStackTrace(); 
+			}
+		}
+	}
+
+	/**
+	 * 상태 코드와 결과 메시지를 받아서 로그로 남긴다.
+	 * 
+	 * @param statusCode 응답 상태 코드 이다. 
+	 * 200 = 성공, 500 = 서버 오류, 0 = 네트워크 연결 실패
+	 * @param resultMessage 디바이스 정보 등록 결과에 대한 메시지다.
+	 */
+	private static void writeLog(int statusCode, String resultMessage) {
+		PrintWriter printWriter = null;
+		FileOutputStream fileOutputStream = null;
+		
+		
+		try {
+			Path path = Paths.get(AGENT_LOG_PATH);
+			Files.createDirectories(path);
+			
+			printWriter = new PrintWriter(new FileOutputStream(Paths.get(AGENT_LOG_PATH).toString() + "\\log.txt", true));
+			printWriter.write(new SimpleDateFormat("yyyy-MM-dd hh:mm:ss").format(new Date()));
+			printWriter.write(" / status Code : " + statusCode);
+			printWriter.write(" / result Message : " + resultMessage + "\r\n");
+			
+		} catch (Exception e) {
+			e.printStackTrace();
+		} finally {
+			try {
+				if(fileOutputStream != null) {fileOutputStream.close();}
+				if(printWriter != null) {printWriter.close();}
+			} catch (Exception e) { e.printStackTrace(); }
+		}
+	}
+}
